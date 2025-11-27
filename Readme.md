@@ -4,6 +4,8 @@ A modern, cross-platform 3D Model Viewer
 
 Proxima View is designed to offer a clean, intuitive, and feature-rich environment for inspecting, debugging, and exporting GLTF and GLB assets. It is built using Electron to ensure native desktop performance and compatibility across Windows, macOS, and Linux.
 
+![App Screenshot](https://github.com/akarca/ProximaView/blob/main/app.webp)
+
 ✨ Key Features
 
 Proxima View v1.0.0 provides a strong foundation for 3D asset inspection.
