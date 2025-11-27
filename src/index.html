@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proxima View</title>
+    <script type="module" src="assets/model-viewer.min.js"></script>
+    <script src="assets/tw.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1f2937;
+        }
+        model-viewer {
+            width: 100%;
+            height: 100%;
+        }
+        #viewer-container {
+            width: 100vw;
+            height: calc(100vh - 40px);
+            position: relative;
+            display: block;
+        }
+        #status-message {
+            height: 40px;
+            color: #d1d5db;
+            padding: 0 1rem;
+            display: flex;
+            align-items: center;
+            background-color: #111827;
+            font-size: 0.875rem;
+        }
+        .drag-feedback {
+            outline: 4px dashed #6366f1;
+            outline-offset: -10px;
+            transition: outline-color 0.15s ease-in-out;
+        }
+    </style>
+</head>
+<body class="overflow-hidden">
+
+    <div id="status-message" class="text-green-400">
+        Drag and drop a .glb/.gltf file onto the viewer area
+    </div>
+
+    <div id="viewer-container">
+        <model-viewer
+            id="modelViewer"
+            src=""
+            alt="A 3D model loaded from the operating system."
+            camera-controls
+            shadow-intensity="1"
+            tone-mapping="neutral"
+            class="rounded-lg shadow-2xl"
+        ></model-viewer>
+    </div>
+
+    <!-- Animation and Rendering Control Panel -->
+    <div id="controls-panel" class="absolute top-16 left-4 z-10 p-4 space-y-4 bg-gray-800/90 rounded-lg shadow-2xl transition duration-300 pointer-events-none opacity-0">
+
+        <!-- Rendering Controls -->
+        <div id="rendering-controls" class="space-y-2">
+            <p class="text-xs font-semibold uppercase text-gray-400">Rendering Settings</p>
+            <div class="flex flex-col space-y-1">
+                <label for="tone-mapping-select" class="text-sm text-gray-300">Tone Mapping</label>
+                <select id="tone-mapping-select" class="p-2 bg-gray-700 text-white rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 pointer-events-auto w-full">
+                    <option value="neutral">Neutral</option>
+                    <option value="aces">ACES</option>
+                    <option value="agx">AgX</option>
+                    <option value="cineon">Cineon</option>
+                    <option value="reinhard">Reinhard</option>
+                    <option value="linear">Linear</option>
+                    <option value="none">None</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Animation Controls -->
+        <div id="animation-controls" class="space-y-2">
+            <p class="text-xs font-semibold uppercase text-gray-400">Model Animations</p>
+            <div class="flex items-center space-x-2">
+                <select id="animation-select" class="p-2 bg-gray-700 text-white rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 pointer-events-auto">
+                    <option value="" disabled selected>Select an Animation</option>
+                </select>
+
+                <button id="play-pause-button" class="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition duration-150 text-sm pointer-events-auto" disabled>
+                    ▶ Play
+                </button>
+            </div>
+        </div>
+
+        <!-- Export Button -->
+        <button id="export-button" class="w-full p-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-md transition duration-150 text-sm pointer-events-auto" disabled>
+            🖼️ Export Animation (PNG Sequence)
+        </button>
+    </div>
+
+    <script>
+        // Global variable to keep track of the temporary Object URL for cleanup
+        let currentObjectUrl = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const modelViewer = document.getElementById('modelViewer');
+            const statusMessage = document.getElementById('status-message');
+            const controlsPanel = document.getElementById('controls-panel');
+            const animationSelect = document.getElementById('animation-select');
+            const playPauseButton = document.getElementById('play-pause-button');
+            const exportButton = document.getElementById('export-button');
+            const viewerContainer = document.getElementById('viewer-container');
+            const toneMappingSelect = document.getElementById('tone-mapping-select');
+
+            let isPlaying = false;
+
+            /**
+             * Updates the animation controls list and enables/disables the export button.
+             */
+            function updateAnimationControls() {
+                // Clear previous options
+                animationSelect.innerHTML = '<option value="" disabled selected>Select an Animation</option>';
+                playPauseButton.disabled = true;
+                exportButton.disabled = true; // Initially disable export
+                playPauseButton.textContent = '▶ Play';
+                isPlaying = false;
+                modelViewer.pause();
+
+                const animations = modelViewer.availableAnimations;
+
+                if (animations && animations.length > 0) {
+                    controlsPanel.classList.remove('opacity-0', 'pointer-events-none');
+                    controlsPanel.classList.add('opacity-100');
+
+                    animations.forEach(name => {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        animationSelect.appendChild(option);
+                    });
+
+                    // Automatically select and play the first animation if available
+                    animationSelect.value = animations[0];
+                    modelViewer.setAttribute('animation-name', animations[0]);
+                    modelViewer.play({ repetition: Infinity });
+                    isPlaying = true;
+                    playPauseButton.textContent = '❚❚ Pause';
+                    playPauseButton.disabled = false;
+                    exportButton.disabled = false; // Enable export if animations exist
+
+                } else {
+                    controlsPanel.classList.add('opacity-0', 'pointer-events-none');
+                }
+            }
+
+            /**
+             * Handles the process of capturing the current animation as a PNG sequence.
+             */
+            async function exportAnimationSequence() {
+                const FPS = 24;
+                const animationName = animationSelect.value;
+
+                if (!animationName || modelViewer.duration === 0) {
+                    statusMessage.innerHTML = 'Error: Cannot export. Select a model with a valid animation.';
+                    return;
+                }
+
+                // Calculate the number of frames needed
+                const duration = modelViewer.duration; // Total duration in seconds
+                const totalFrames = Math.ceil(duration * FPS);
+
+                statusMessage.innerHTML = `Starting export of <strong>${animationName}</strong>: 0/${totalFrames} frames...`;
+
+                // Disable controls during capture
+                exportButton.disabled = true;
+                playPauseButton.disabled = true;
+
+                const frameData = [];
+
+                // Stop any current animation and set the current animation name
+                modelViewer.pause();
+                modelViewer.setAttribute('animation-name', animationName);
+
+                /**
+                 * Captures a single frame at a specific time in the animation.
+                 * @param {number} frameIndex The index of the frame (0 to totalFrames - 1)
+                 */
+                const captureFrame = (frameIndex) => new Promise(resolve => {
+                    const time = (frameIndex / FPS); // Time in seconds
+
+                    // Set the model viewer's current time
+                    modelViewer.currentTime = time;
+
+                    // Use requestAnimationFrame to ensure the new time is rendered before capture
+                    requestAnimationFrame(() => {
+                        // Capture the frame as a PNG data URL (base64)
+                        const dataURL = modelViewer.toDataURL('image/png');
+
+                        frameData.push({
+                            // Strip the "data:image/png;base64," prefix, sending only the raw data
+                            data: dataURL.split(',')[1],
+                            name: `${animationName}_frame_${String(frameIndex).padStart(4, '0')}.png`
+                        });
+
+                        statusMessage.innerHTML = `Exporting <strong>${animationName}</strong>: ${frameIndex + 1}/${totalFrames} frames captured.`;
+                        resolve();
+                    });
+                });
+
+                // Capture all frames in sequence
+                for (let i = 0; i < totalFrames; i++) {
+                    await captureFrame(i);
+                }
+
+                // Reset viewer to first frame after capture
+                modelViewer.currentTime = 0;
+
+                // Send data to main process for zipping and saving
+                if (window.electronAPI && window.electronAPI.exportAnimation) {
+                    statusMessage.innerHTML = `Export complete. Sending ${frameData.length} frames to Main Process for zipping...`;
+
+                    // The main process will handle zipping the sequence and showing the save dialog
+                    window.electronAPI.exportAnimation({
+                        animationName: animationName,
+                        frames: frameData
+                    });
+
+                } else {
+                    statusMessage.innerHTML = `Export finished, but file saving is not configured (IPC not available).`;
+                }
+
+                // Re-enable controls
+                exportButton.disabled = false;
+                playPauseButton.disabled = false;
+            }
+
+
+            /**
+             * Handles loading a model, supporting both file paths (from IPC) and File objects (from Drag/Drop).
+             * @param {string|File} input The file path string or the File object.
+             */
+            function handleModelLoad(input) {
+                // Cleanup previous object URL to prevent memory leaks
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                    currentObjectUrl = null;
+                }
+
+                let fileUri;
+                let fileName;
+
+                if (typeof input === 'string') {
+                    // Case 1: Input is a file path string (from IPC or macOS open-file)
+                    console.log('Attempting to load file from path:', input);
+
+                    // Use 'file://' protocol and normalize path
+                    fileUri = 'file://' + input.replace(/\\/g, '/');
+                    fileName = input.split(/[\\/]/).pop();
+
+                } else if (input instanceof File) {
+                    // Case 2: Input is a File object (from Drag & Drop)
+                    console.log('Attempting to load file from Blob/File object:', input.name);
+
+                    // Create a secure, temporary Object URL from the File blob
+                    fileUri = URL.createObjectURL(input);
+                    currentObjectUrl = fileUri; // Store for cleanup
+                    fileName = input.name;
+
+                } else {
+                    console.error('Invalid input type for handleModelLoad.');
+                    return;
+                }
+
+                // Validate file extension (Only .glb and .gltf supported)
+                if (fileName.toLowerCase().endsWith('.glb') || fileName.toLowerCase().endsWith('.gltf')) {
+                    modelViewer.setAttribute('src', fileUri);
+                    statusMessage.innerHTML = `Loaded model: <strong> ${fileName}</strong>`;
+                    statusMessage.classList.remove('text-red-400');
+                    statusMessage.classList.add('text-green-400');
+
+                    // 'load' event listener will call updateAnimationControls
+                } else {
+                    statusMessage.innerHTML = `Error: Cannot open file. Only **.glb** and **.gltf** files are supported. Dropped file: <strong>${fileName}</strong>`;
+                    statusMessage.classList.remove('text-green-400');
+                    statusMessage.classList.add('text-red-400');
+                    console.error('Unsupported file type received:', fileName);
+
+                    // Hide controls if an invalid file is attempted
+                    controlsPanel.classList.add('opacity-0', 'pointer-events-none');
+                }
+            }
+
+
+            // -------------------- Drag and Drop Handlers (FIXED) --------------------
+
+            viewerContainer.addEventListener('dragover', (e) => {
+                e.preventDefault(); // Necessary to allow dropping
+                e.stopPropagation();
+                viewerContainer.classList.add('drag-feedback');
+            });
+
+            viewerContainer.addEventListener('dragleave', (e) => {
+                e.stopPropagation();
+                viewerContainer.classList.remove('drag-feedback');
+            });
+
+            viewerContainer.addEventListener('drop', (e) => {
+                e.preventDefault(); // Prevent browser from opening the file
+                e.stopPropagation();
+                viewerContainer.classList.remove('drag-feedback');
+
+                const files = e.dataTransfer.files;
+
+                if (files.length > 0) {
+                    // Pass the File object directly. It is now handled in handleModelLoad
+                    handleModelLoad(files[0]);
+                } else {
+                    statusMessage.innerHTML = `Drag/Drop failed: No files detected in the drop event. Please drop the actual file.`;
+                    statusMessage.classList.remove('text-green-400');
+                    statusMessage.classList.add('text-red-400');
+                    console.error("e.dataTransfer.files is empty. Using Object URLs is the correct way, but the drop event failed to capture the file data.");
+                    console.log("e.dataTransfer items detected:", Array.from(e.dataTransfer.items).map(item => ({ kind: item.kind, type: item.type })));
+                }
+            });
+
+            // -------------------- Event Listeners --------------------
+
+            // Event listener for model loading completion (key to accessing animation data)
+            modelViewer.addEventListener('load', updateAnimationControls);
+
+            // NEW: Event listener for Tone Mapping selector
+            toneMappingSelect.addEventListener('change', (e) => {
+                modelViewer.setAttribute('tone-mapping', e.target.value);
+                statusMessage.innerHTML = `Tone Mapping set to: <strong>${e.target.value.toUpperCase()}</strong>`;
+            });
+
+            // Event listener for animation selection change
+            animationSelect.addEventListener('change', () => {
+                const selectedAnimation = animationSelect.value;
+                if (selectedAnimation) {
+                    modelViewer.setAttribute('animation-name', selectedAnimation);
+                    modelViewer.play({ repetition: Infinity });
+                    isPlaying = true;
+                    playPauseButton.textContent = '❚❚ Pause';
+                    playPauseButton.disabled = false;
+                }
+            });
+
+            // Event listener for Play/Pause button
+            playPauseButton.addEventListener('click', () => {
+                if (isPlaying) {
+                    modelViewer.pause();
+                    playPauseButton.textContent = '▶ Play';
+                } else {
+                    modelViewer.play({ repetition: Infinity });
+                    playPauseButton.textContent = '❚❚ Pause';
+                }
+                isPlaying = !isPlaying;
+            });
+
+            // Event listener for Export button
+            exportButton.addEventListener('click', exportAnimationSequence);
+
+
+            // -------------------- IPC Listener (Existing File Loading) --------------------
+
+            if (window.electronAPI && window.electronAPI.onLoadModel) {
+
+                // IPC Listener receives the file path string
+                window.electronAPI.onLoadModel((filePath) => {
+                    handleModelLoad(filePath);
+                });
+
+                // IPC Listener for Export Feedback (optional, but good practice)
+                if (window.electronAPI.onExportFeedback) {
+                    window.electronAPI.onExportFeedback(({ success, message }) => {
+                        if (success) {
+                            statusMessage.innerHTML = `<span class="text-green-400">Export Success:</span> ${message}`;
+                        } else {
+                            statusMessage.innerHTML = `<span class="text-red-400">Export Failed:</span> ${message}`;
+                        }
+                    });
+                }
+
+            } else {
+                statusMessage.innerHTML = `Error: IPC Bridge not available. The Electron preload script might be missing.`;
+                statusMessage.classList.add('text-red-400');
+            }
+        });
+    </script>
+</body>
+</html>

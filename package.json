@@ -1,0 +1,65 @@
+{
+  "name": "Proxima View",
+  "productName": "Proxima View",
+  "version": "1.0.0",
+  "description": "Proxima View is a powerful 3D model viewer",
+  "main": "src/index.js",
+  "build": {
+    "mac": {
+      "extendInfo": {
+        "CFBundleDocumentTypes": [
+          {
+            "name": "glTF 3D Model",
+            "role": "Viewer",
+            "fileTypes": [
+              "glb",
+              "gltf"
+            ]
+          }
+        ]
+      },
+      "target": "dmg",
+      "fileAssociations": [
+        {
+          "ext": [
+            "gltf",
+            "glb"
+          ],
+          "name": "glTF 3D Model",
+          "role": "Viewer"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish",
+    "lint": "echo \"No linting configured\""
+  },
+  "keywords": [],
+  "author": {
+    "name": "Serdar Akarca",
+    "email": "serdar@yuix.org"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tailwindcss/cli": "^4.1.17",
+    "adm-zip": "^0.5.16",
+    "electron-squirrel-startup": "^1.0.1",
+    "tailwindcss": "^4.1.17",
+    "three": "^0.181.2"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-rpm": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
+    "@electron-forge/plugin-fuses": "^7.10.2",
+    "@electron/fuses": "^1.8.0",
+    "electron": "39.2.3"
+  }
+}
