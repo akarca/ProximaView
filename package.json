@@ -45,11 +45,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@tailwindcss/cli": "^4.1.17",
     "adm-zip": "^0.5.16",
-    "electron-squirrel-startup": "^1.0.1",
-    "tailwindcss": "^4.1.17",
-    "three": "^0.181.2"
+    "electron-squirrel-startup": "^1.0.1"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.10.2",
